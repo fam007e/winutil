@@ -15,7 +15,7 @@ $sync.PSScriptRoot = $workingdir
 $sync.configs = @{}
 
 # Dot-source external functions
-. "$PSScriptRoot\tools\Update-Progress.ps1"
+. "$workingdir\tools\Update-Progress.ps1"
 
 # Function to log messages
 function Log-Message {
@@ -30,9 +30,25 @@ function Encode-JsonSpecialChars {
         [Parameter(Mandatory)]
         [PSObject]$jsonObject
     )
+
+    # TODO: Make this function support variable depth of levels for passed json object
+    #       Currently it only goes 2 levels deep into json object.
+
     foreach ($prop in $jsonObject.PSObject.Properties) {
-        if ($prop.Value -is [string]) {
-            $prop.Value = $prop.Value.Replace('&','&#38;').Replace('“','&#8220;').Replace('”','&#8221;').Replace("'",'&#39;').Replace('<','&#60;').Replace('>','&#62;').Replace('—','&#8212;')
+        $key = $prop.Name
+        $val = $prop.Value
+        foreach ($subProp in $val.PSObject.Properties) {
+            $subKey = $subProp.Name
+            $subVal = $subProp.Value
+            if ($subVal -ne $null -and $subVal -is [string]) {
+                try {
+                    $jsonObject.$key.$subKey = $subVal.Replace('&','&#38;').Replace('“','&#8220;').Replace('”','&#8221;').Replace("'",'&#39;').Replace('<','&#60;').Replace('>','&#62;').Replace('—','&#8212;').Replace('&#39;&#39;','&#39;')
+                } catch {
+                    Write-Warning "Failed to escape special characters for json object"
+                    Write-Warning "$_"
+                    exit 1
+                }
+            }
         }
     }
     return $jsonObject
@@ -46,14 +62,11 @@ $header = @"
 ################################################################################################################
 "@
 
-if ($Debug) {
-    Write-Debug "Debug mode enabled"
-}
-
 if (-NOT $SkipPreprocessing) {
     try {
         Update-Progress "Pre-req: Running Preprocessor..." 0
-        $preprocessingFilePath = Join-Path $PSScriptRoot "tools\Invoke-Preprocessing.ps1"
+        $preprocessingFilePath = ".\tools\Invoke-Preprocessing.ps1"
+        . "$(($workingdir -replace ('\\$', '')) + '\' + ($preprocessingFilePath -replace ('\.\\', '')))"       $preprocessingFilePath = Join-Path $workingdir "tools\Invoke-Preprocessing.ps1"
         . "$preprocessingFilePath"
 
         $excludedFiles = @('.\.git\', '.\.gitignore', '.\.gitattributes', '.\.github\CODEOWNERS', '.\LICENSE', "$preprocessingFilePath", '*.png', '*.exe')
@@ -84,7 +97,7 @@ Get-ChildItem "$workingdir\functions" -Recurse -File | ForEach-Object {
 
 Update-Progress "Adding: Config *.json" 40
 Get-ChildItem "$workingdir\config" | Where-Object {$_.extension -eq ".json"} | ForEach-Object {
-    $json = Get-Content -Path $psitem.FullName -Raw
+    $json = (Get-Content $psitem.FullName).replace("'","''")
     $jsonAsObject = $json | ConvertFrom-Json
     $jsonAsObject = Encode-JsonSpecialChars -jsonObject $jsonAsObject
 
