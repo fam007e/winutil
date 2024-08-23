@@ -37,6 +37,9 @@ Microsoft.PowerShell.ConsoleHost.dll
 # Compressed files
 *.zip
 
+# Log Files
+*.log
+
 ### MacOS ###
 
 # General
